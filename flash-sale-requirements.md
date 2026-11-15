@@ -93,7 +93,7 @@ ACCEPTED ─► PENDING_PAYMENT ─► PAID
 ## 4. Architecture constraints
 
 ```
-Client ─► CDN/WAF ─► Waiting room ─► Order Service
+Client ─► CDN/WAF ─► Waiting room ─► Reservation Service
                                         │
                                   (1) Redis Lua: hold seats ── lose → 409 immediately
                                         │ win
@@ -150,7 +150,7 @@ Seat map: Redis/CDN snapshot + SSE        Replica: reporting only
   - When sales open, the user sees their queue position and an estimated wait time.
   - The system admits users at a configurable rate (N users per second).
   - Each user has only one position in the queue (no taking several slots with multiple tabs).
-  - The waiting room can absorb the entire user population without overloading the Order Service.
+  - The waiting room can absorb the entire user population without overloading the Reservation Service.
 
 #### US-04 — Be admitted to seat selection with a token
 - **Priority:** Must · **Estimate:** 3
@@ -202,7 +202,7 @@ Seat map: Redis/CDN snapshot + SSE        Replica: reporting only
 - **Priority:** Must · **Estimate:** 5
 - **Story:** As a Buyer who won seats, I want the system to confirm my order and let me track its status, so that I know when I can pay.
 - **Acceptance criteria:**
-  - After winning in Redis, the Order Service publishes a message and returns 202 with a `requestId`.
+  - After winning in Redis, the Reservation Service publishes a message and returns 202 with a `requestId`.
   - If publishing fails, the **hold is released** and 503 is returned, so no seat is left dangling.
   - The client checks status by `requestId` over SSE or a polling endpoint.
   - Returned statuses: `ACCEPTED`, `PENDING_PAYMENT`, `FAILED`, `EXPIRED`, `PAID`.
@@ -352,7 +352,7 @@ The thresholds are **design targets** for 60k CCU; for the local profile, measur
 
 | ID | Requirement | Target |
 |---|---|---|
-| NFR-S01 | Order Service and Booking Service are **stateless** and scale horizontally | Adding instances increases RPS nearly linearly at the API tier |
+| NFR-S01 | Reservation Service and Booking Service are **stateless** and scale horizontally | Adding instances increases RPS nearly linearly at the API tier |
 | NFR-S02 | Seats are distributed across Redis shards by section | No shard carries more than ~2× the average load |
 | NFR-S03 | Determine the real capacity | A figure for "max RPS of 1 container (4 vCPU/8 GB)" at passing p95 and ~70% CPU |
 | NFR-S04 | Instances needed = `peak RPS / RPS per container × (1.3 to 1.5)` | A calculation table in the report |
@@ -421,7 +421,7 @@ The thresholds are **design targets** for 60k CCU; for the local profile, measur
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Backend | .NET (latest LTS), ASP.NET Core minimal API | Order Service, Booking Service |
+| Backend | .NET (latest LTS), ASP.NET Core minimal API | Reservation Service, Booking Service |
 | Frontend | React | Seat map, waiting room, status tracking |
 | Cache and seat holds | Redis (Cluster, AOF on) + StackExchange.Redis | Atomic Lua scripts |
 | Database | PostgreSQL (1 primary + a replica for reporting) + PgBouncer | The unique constraint is the last line of defense |
@@ -453,7 +453,7 @@ The thresholds are **design targets** for 60k CCU; for the local profile, measur
 |---|---|---|
 | **M1 — Baseline** | Seat map, seat holds with PostgreSQL only (conditional `UPDATE` + unique constraint), correctness test | US-01, US-05 (DB version), US-19, US-22 (baseline) |
 | **M2 — Redis hold** | Lua scripts for hold/release, expiry, fast 409 | US-05, US-06, US-07, US-08 |
-| **M3 — Queue and booking** | Order Service → queue → Booking Service, idempotency, DLQ, conflict handling | US-09, US-10, US-11 |
+| **M3 — Queue and booking** | Reservation Service → queue → Booking Service, idempotency, DLQ, conflict handling | US-09, US-10, US-11 |
 | **M4 — Payment** | Mock gateway, idempotent webhook, refunds | US-12, US-13, US-14 |
 | **M5 — Experience** | Waiting room, SSE, purchase limits, inventory loading | US-02, US-03, US-04, US-15 |
 | **M6 — Measure and prove** | Observability, load test, chaos test, reconciliation, comparison ADR | US-16, US-17, US-20, US-21, US-22 |
