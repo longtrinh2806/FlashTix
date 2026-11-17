@@ -11,9 +11,9 @@ example payment confirmed: order `PAID`, seat `SOLD`), a crash between the two w
 
 ## Decision
 
-We will make Booking write **PostgreSQL first, then update Redis**. The crash window is: DB committed, Redis
+We will make Order write **PostgreSQL first, then update Redis**. The crash window is: DB committed, Redis
 not yet updated. In that state the DB (truth) is ahead of Redis, so the unique constraint still blocks any
-conflicting booking (ADR-0002), and the **reconciliation job** compares `SOLD` / `PENDING_PAYMENT` in the DB
+conflicting order (ADR-0002), and the **reconciliation job** compares `SOLD` / `PENDING_PAYMENT` in the DB
 with Redis and repairs the difference. A rebuild-Redis-from-DB operation exists for larger loss.
 
 ## Alternatives considered

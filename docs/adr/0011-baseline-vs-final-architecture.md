@@ -14,7 +14,7 @@ it is worth it. The simplest correct approach is PostgreSQL alone with a conditi
 We will build the baseline first (milestone M1), measure it, then add components one by one (M2 to M6) and re-run
 the **same k6 scenario** after each step, recording keep or drop for each component and why.
 
-| Metric | Baseline | + Redis hold | + Queue/Booking | Final |
+| Metric | Baseline | + Redis hold | + Queue/Order | Final |
 |---|---|---|---|---|
 | Max RPS of one container (4 vCPU / 8 GB) | Not measured yet | Not measured yet | Not measured yet | Not measured yet |
 | p95/p99, winners; p95, losers (409) | Not measured yet | Not measured yet | Not measured yet | Not measured yet |

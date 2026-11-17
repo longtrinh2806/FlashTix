@@ -15,7 +15,7 @@ whole event in one slot creates a hot shard.
 We will hold and release seats with **atomic Lua scripts**: check every seat, then set all or none. A repeated
 request by the same owner counts as success and does not extend the TTL. Release compares the owner token. We
 will key seats as `seat:{eventId:section}:seatId`, so a hold (one section, max 4 seats) stays in one slot while
-sections spread across shards. Scripts live in their own files with their own tests (NFR-M05). Booking's
+sections spread across shards. Scripts live in their own files with their own tests (NFR-M05). Order's
 `PENDING_PAYMENT` / `SOLD` transitions (ADR-0001) are also Lua scripts with an owner-token check.
 
 ## Alternatives considered

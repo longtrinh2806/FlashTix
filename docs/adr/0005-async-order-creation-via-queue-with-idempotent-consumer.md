@@ -1,4 +1,4 @@
-# ADR-0005: Async booking through an at-least-once queue with an idempotent consumer
+# ADR-0005: Async order creation through an at-least-once queue with an idempotent consumer
 
 - **Status:** Accepted
 - **Date:** 2026-11-15
@@ -12,7 +12,7 @@ exposes the master to the spike. A standard queue is at-least-once with no order
 ## Decision
 
 We will have Reservation publish a command to the RabbitMQ `commands` queue and return **202** with a
-`requestId`; if publishing fails it releases the hold and returns 503. Booking will be **idempotent** and
+`requestId`; if publishing fails it releases the hold and returns 503. Order will be **idempotent** and
 order-independent:
 - Unique violation `23505` on `request_id`: duplicate, ack and skip.
 - Unique violation on `(event_id, seat_id)`: real conflict, order `FAILED`, hold released if still owned, user told before payment. The two are told apart by **constraint name**.

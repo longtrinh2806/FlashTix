@@ -1,4 +1,4 @@
-# ADR-0008: Notification/Realtime: fanout exchange across instances and a single snapshot builder reading from a Redis replica
+# ADR-0008: Notification: fanout exchange across instances and a single snapshot builder reading from a Redis replica
 
 - **Status:** Proposed
 - **Date:** 2026-11-15
@@ -6,13 +6,13 @@
 
 ## Context
 
-Notification/Realtime runs several instances, each holding SSE connections for some users. Booking events
+Notification runs several instances, each holding SSE connections for some users. Order events
 (order status, seat sold) must reach the instance holding the right user's connection. The seat map must be
 cheap to serve to tens of thousands of clients without hitting the master.
 
 ## Decision
 
-**Events:** Booking publishes to a fanout (or topic) exchange. Each Notification instance binds its own
+**Events:** Order publishes to a fanout (or topic) exchange. Each Notification instance binds its own
 exclusive, auto-delete queue and filters events against its local connection map. A shared work queue would
 deliver each event to only one instance, which may not hold the user's connection.
 

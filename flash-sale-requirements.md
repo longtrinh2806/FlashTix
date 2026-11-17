@@ -99,7 +99,7 @@ Client ─► CDN/WAF ─► Waiting room ─► Reservation Service
                                         │ win
                                   (2) Publish message ─► Queue (Standard)
                                                              │
-                                                      Booking Service ─► PostgreSQL master
+                                                      Order Service ─► PostgreSQL master
                                                              │
                                                   (3) Redis: extend / mark
 Seat map: Redis/CDN snapshot + SSE        Replica: reporting only
@@ -109,7 +109,7 @@ Seat map: Redis/CDN snapshot + SSE        Replica: reporting only
 |---|---|
 | AC-01 | Redis is a **lock for efficiency** (a fast filter). Correctness is guaranteed by the **unique constraint `(event_id, seat_id)` in PostgreSQL** (the fencing layer). |
 | AC-02 | Holding seats is done with an **atomic Lua script** (all-or-nothing, idempotent per `userId`), never `GET` followed by `SET`. |
-| AC-03 | The queue is **at-least-once with no ordering guarantee**. The Booking Service **must be idempotent** and must not depend on message order. |
+| AC-03 | The queue is **at-least-once with no ordering guarantee**. The Order Service **must be idempotent** and must not depend on message order. |
 | AC-04 | Write order: **DB first, Redis second**. |
 | AC-05 | **Never read from a replica to make a decision** (replication lag). Replicas are for reporting only. |
 | AC-06 | If Redis is unavailable, **fail closed** (return 503). Do not fall back to the DB, because that would push all the load onto the master. |
@@ -196,7 +196,7 @@ Seat map: Redis/CDN snapshot + SSE        Replica: reporting only
   - **Given** the previous user pays after expiry and the seat now belongs to someone else, **When** they confirm, **Then** they are rejected at the owner-token check.
   - Correctness **does not depend** on a cleanup job (expiry is enforced by TTL and token).
 
-### Epic D — Orders and booking
+### Epic D — Orders
 
 #### US-09 — Create an order asynchronously and track its status
 - **Priority:** Must · **Estimate:** 5
@@ -207,7 +207,7 @@ Seat map: Redis/CDN snapshot + SSE        Replica: reporting only
   - The client checks status by `requestId` over SSE or a polling endpoint.
   - Returned statuses: `ACCEPTED`, `PENDING_PAYMENT`, `FAILED`, `EXPIRED`, `PAID`.
 
-#### US-10 — Idempotent processing in the Booking Service
+#### US-10 — Idempotent processing in the Order Service
 - **Priority:** Must · **Estimate:** 8
 - **Story:** As the system, I want to process order-creation messages so that duplicate delivery or reordering still produces the correct result.
 - **Acceptance criteria:**
@@ -221,7 +221,7 @@ Seat map: Redis/CDN snapshot + SSE        Replica: reporting only
 - **Priority:** Must · **Estimate:** 5
 - **Story:** As a Buyer, if the system discovers that my seat actually has another owner, I want to be told before I am charged.
 - **Acceptance criteria:**
-  - **Given** Redis says I won but the DB rejects due to the unique constraint, **When** the booking is processed, **Then** the order becomes `FAILED` and the hold is released if it still belongs to me.
+  - **Given** Redis says I won but the DB rejects due to the unique constraint, **When** the order is processed, **Then** the order becomes `FAILED` and the hold is released if it still belongs to me.
   - The user is told "seat no longer available" **before the payment step**.
   - No money transaction is created for a `FAILED` order.
 
@@ -308,7 +308,7 @@ Seat map: Redis/CDN snapshot + SSE        Replica: reporting only
 - **Priority:** Should · **Estimate:** 5
 - **Story:** As a developer, I want to verify that the system stays correct when a component fails during load.
 - **Acceptance criteria:**
-  - Scenarios: stop Redis, kill a booking consumer, restart PostgreSQL, simulate duplicate message delivery.
+  - Scenarios: stop Redis, kill an order consumer, restart PostgreSQL, simulate duplicate message delivery.
   - After each scenario, the "no double sale" invariant still holds.
   - The system recovers within the NFR-R05 limit without manual intervention (except a Redis rebuild if needed).
 
@@ -352,7 +352,7 @@ The thresholds are **design targets** for 60k CCU; for the local profile, measur
 
 | ID | Requirement | Target |
 |---|---|---|
-| NFR-S01 | Reservation Service and Booking Service are **stateless** and scale horizontally | Adding instances increases RPS nearly linearly at the API tier |
+| NFR-S01 | Reservation Service and Order Service are **stateless** and scale horizontally | Adding instances increases RPS nearly linearly at the API tier |
 | NFR-S02 | Seats are distributed across Redis shards by section | No shard carries more than ~2× the average load |
 | NFR-S03 | Determine the real capacity | A figure for "max RPS of 1 container (4 vCPU/8 GB)" at passing p95 and ~70% CPU |
 | NFR-S04 | Instances needed = `peak RPS / RPS per container × (1.3 to 1.5)` | A calculation table in the report |
@@ -394,7 +394,7 @@ The thresholds are **design targets** for 60k CCU; for the local profile, measur
 | ID | Requirement | Target |
 |---|---|---|
 | NFR-O01 | Metrics: RPS, p95/p99, win/conflict counts, queue depth, consumer lag, Redis ops/s, PostgreSQL lock waits and connections, CPU throttling | Shown on a dashboard (Prometheus + Grafana) |
-| NFR-O02 | Structured logs carrying `requestId` and `userId` across order → queue → booking | A request can be traced through every service |
+| NFR-O02 | Structured logs carrying `requestId` and `userId` across reservation → queue → order processing | A request can be traced through every service |
 | NFR-O03 | Distributed tracing (OpenTelemetry) | Redis, queue, and DB spans visible in one trace |
 | NFR-O04 | Alerts | At minimum: p95 above threshold, queue lag growing continuously, messages in the DLQ, reconciliation discrepancy detected |
 
@@ -421,7 +421,7 @@ The thresholds are **design targets** for 60k CCU; for the local profile, measur
 
 | Layer | Choice | Notes |
 |---|---|---|
-| Backend | .NET (latest LTS), ASP.NET Core minimal API | Reservation Service, Booking Service |
+| Backend | .NET (latest LTS), ASP.NET Core minimal API | Reservation Service, Order Service |
 | Frontend | React | Seat map, waiting room, status tracking |
 | Cache and seat holds | Redis (Cluster, AOF on) + StackExchange.Redis | Atomic Lua scripts |
 | Database | PostgreSQL (1 primary + a replica for reporting) + PgBouncer | The unique constraint is the last line of defense |
@@ -453,7 +453,7 @@ The thresholds are **design targets** for 60k CCU; for the local profile, measur
 |---|---|---|
 | **M1 — Baseline** | Seat map, seat holds with PostgreSQL only (conditional `UPDATE` + unique constraint), correctness test | US-01, US-05 (DB version), US-19, US-22 (baseline) |
 | **M2 — Redis hold** | Lua scripts for hold/release, expiry, fast 409 | US-05, US-06, US-07, US-08 |
-| **M3 — Queue and booking** | Reservation Service → queue → Booking Service, idempotency, DLQ, conflict handling | US-09, US-10, US-11 |
+| **M3 — Queue and order processing** | Reservation Service → queue → Order Service, idempotency, DLQ, conflict handling | US-09, US-10, US-11 |
 | **M4 — Payment** | Mock gateway, idempotent webhook, refunds | US-12, US-13, US-14 |
 | **M5 — Experience** | Waiting room, SSE, purchase limits, inventory loading | US-02, US-03, US-04, US-15 |
 | **M6 — Measure and prove** | Observability, load test, chaos test, reconciliation, comparison ADR | US-16, US-17, US-20, US-21, US-22 |
